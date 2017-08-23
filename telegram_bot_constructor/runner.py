@@ -1,42 +1,36 @@
 import time
-from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date
 
 from telegram_bot_vm.actions import BaseAction
 from telegram_bot_vm.machine import BotVM
 
 from . import get_redis_connection
 from .constructor import BotTemplate
-from .helpers import redis_iter, SET, ZSET
 from .operators_server import Operator
 from .operators_server import OperatorsDispatcher
+from .helpers import StoredObject
 
 running_bots = {}
 
 
-class BotRunnerContext:
-    def __init__(self, id_, redis_=None):
-        self.id = id_
-        self.redis = redis_ if redis_ is not None else get_redis_connection()
+class BotRunnerContext(StoredObject):
+    MNEMONIC = 'bot_context'
 
-    @classmethod
-    def create(cls, name, bot_template, token):
-        redis_ = get_redis_connection()
-        last_id = redis_.get('last_bot_context_id')
-        last_id = int(last_id) if last_id is not None else 0
-        redis_.hmset('bot_contexts:%d' % last_id, {'name': name,
-                                                   'bot_template': bot_template.id,
-                                                   'token': token})
-        redis_.zadd('bot_contexts_list', last_id, time.time())
-        redis_.incr('last_bot_context_id')
-        return cls(last_id, redis_)
+    def init(self, name, bot_template, token):
+        self.name = name
+        self.bot_template = bot_template
+        self.token = token
+        self.redis.rpush('bot_contexts_list', self.id)
 
-    def delete(self):
+    def clean_up(self):
         for operator in self.operators:
             operator.delete()
-        self.redis.delete('bot_contexts:%d' % self.id)
+        self.redis.delete('bot_contexts:%d:name' % self.id)
+        self.redis.delete('bot_contexts:%d:bot_template' % self.id)
+        self.redis.delete('bot_contexts:%d:token' % self.id)
         self.redis.delete('bot_contexts:%d:operators' % self.id)
-        self.redis.zrem('bot_contexts_list', self.id)
+        self.redis.delete('bot_contexts:%d:visits' % self.id)
+        self.redis.lrem('bot_contexts_list', self.id)
 
     @property
     def running(self):
@@ -44,50 +38,46 @@ class BotRunnerContext:
 
     @property
     def name(self):
-        return self.redis.hget('bot_contexts:%d' % self.id, 'name').decode()
+        return self.redis.get('bot_contexts:%d:name' % self.id).decode()
 
     @name.setter
     def name(self, name):
-        self.redis.hset('bot_contexts:%d' % self.id, 'name', name)
+        self.redis.set('bot_contexts:%d:name' % self.id, name)
 
     @property
     def token(self):
-        return self.redis.hget('bot_contexts:%d' % self.id, 'token').decode()
+        return self.redis.get('bot_contexts:%d:token' % self.id).decode()
 
     @token.setter
     def token(self, token):
-        self.redis.hset('bot_contexts:%d' % self.id, 'token', token)
+        self.redis.set('bot_contexts:%d:token' % self.id, token)
 
     @property
     def bot_template(self):
-        bot_template_id = self.redis.hget('bot_contexts:%d' % self.id, 'bot_template')
+        bot_template_id = self.redis.get('bot_contexts:%d:bot_template' % self.id)
         if bot_template_id is not None:
             return BotTemplate(int(bot_template_id))
 
     @bot_template.setter
     def bot_template(self, bot_template):
-        self.redis.hset('bot_contexts:%d' % self.id, 'bot_template', bot_template)
+        self.redis.set('bot_contexts:%d:bot_template' % self.id, bot_template.id)
 
     def add_operator(self, operator):
-        self.redis.sadd('bot_contexts:%d:operators' % self.id, operator.id)
+        self.redis.rpush('bot_contexts:%d:operators' % self.id, operator.id)
 
     def delete_operator(self, operator):
-        self.redis.srem('bot_contexts:%d:operators' % self.id, operator.id)
+        self.redis.lrem('bot_contexts:%d:operators' % self.id, operator.id)
 
     @property
     def operators(self):
-        operators = []
-        for o in redis_iter(self.redis, 'bot_contexts:%d:operators' % self.id, SET):
-            operators.append(Operator(int(o[0])))
-        return operators
+        operators = self.redis.lrange('bot_contexts:%d:operators' % self.id, 0, -1)
+        return tuple(Operator(int(o)) for o in operators)
 
     @classmethod
     def list(cls):
         redis_ = get_redis_connection()
-        bot_contexts = OrderedDict()
-        for c in redis_iter(redis_, 'bot_contexts_list', ZSET):
-            bot_contexts[datetime.fromtimestamp(int(c[1]))] = cls(int(c[0]))
-        return bot_contexts
+        bot_contexts = redis_.lrange('bot_contexts_list', 0, -1)
+        return tuple(cls(int(c)) for c in bot_contexts)
 
     def get_visits_per_day(self, date_):
         visits = self.redis.hget('bot_contexts:%d:visits', date_.isoformat())

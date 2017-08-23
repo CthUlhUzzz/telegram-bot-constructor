@@ -8,7 +8,7 @@ from logging import getLogger
 from telegram_bot_vm.actions import BaseAction
 
 from . import get_redis_connection
-from .helpers import random_token, redis_iter, ZSET
+from .helpers import random_token, StoredObject
 
 OPERATOR_ALREADY_CONNECTED = 0
 OPERATOR_ACCESS_DENIED = 1
@@ -19,36 +19,32 @@ OPERATOR_STATUSES = (OPERATOR_ALREADY_CONNECTED, OPERATOR_ACCESS_DENIED, OPERATO
 logger = getLogger('Operators server')
 
 
-class Message:
-    def __init__(self, id_, redis_=None):
-        self.redis = redis_ if redis_ is not None else get_redis_connection()
-        self.id = id_
+class Message(StoredObject):
+    MNEMONIC = 'message'
 
-    @classmethod
-    def create(cls, direction, text):
-        redis_ = get_redis_connection()
-        last_id = redis_.get('last_message_id')
-        last_id = int(last_id) if last_id is not None else 0
-        redis_.hmset('messages:%d' % last_id, {'direction': direction,
-                                               'text': text})
-        redis_.incr('last_message_id')
-        return cls(last_id, redis_)
+    def init(self, direction, text):
+        self.direction = direction
+        self.text = text
 
-    @classmethod
-    def delete(cls, message):
-        redis_ = get_redis_connection()
-        redis_.delete('messages:%d' % message.id)
+    def clean_up(self):
+        self.redis.delete('messages:%d:direction' % self.id)
+        self.redis.delete('messages:%d:text' % self.id)
 
     @property
     def direction(self):
-        return int(self.redis.hget('messages:%d' % self.id, 'direction'))
+        return int(self.redis.get('messages:%d:direction' % self.id))
+
+    @direction.setter
+    def direction(self, direction):
+        self.redis.set('messages:%d:direction' % self.id, direction)
 
     @property
     def text(self):
-        return self.redis.hget('messages:%d' % self.id, 'text').decode()
+        return self.redis.get('messages:%d:text' % self.id).decode()
 
-    def __eq__(self, other):
-        return self.id == other.id
+    @text.setter
+    def text(self, text):
+        self.redis.set('messages:%d:text' % self.id, text)
 
 
 class ConversationStopped(Exception):
@@ -65,34 +61,27 @@ def conversation_check(func):
     return wrapped
 
 
-class Conversation:
+class Conversation(StoredObject):
+    MNEMONIC = 'conversation'
+
     def __init__(self, id_, redis_=None):
-        self.id = id_
+        super().__init__(id_, redis_)
         self.stopped = False
-        self.redis = redis_ if redis_ is not None else get_redis_connection()
         self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
         self.incoming_messages = []
         self.operator = None
 
-    @classmethod
-    def create(cls, operator):
-        redis_ = get_redis_connection()
-        last_id = redis_.get('last_conversation_id')
-        last_id = int(last_id) if last_id is not None else 0
-        conversation = cls(last_id, redis_)
-        conversation.operator = operator
-        redis_.publish('conversation_started', json.dumps(operator.token))
-        redis_.zadd('operators:%s:conversations' % operator.id, last_id, time.time())
-        redis_.incr('last_conversation_id')
+    def init(self, operator):
+        self.operator = operator
+        self.redis.publish('conversation_started', json.dumps(operator.token))
+        self.redis.rpush('operators:%s:conversations' % operator.id, self.id)
         logger.info('Conversation started with operator %s' % operator.token)
-        return conversation
 
-    def delete(self):
-        for message in self.messages:
+    def clean_up(self):
+        for message in self.messages.values():
             message.delete()
-        self.redis.delete('conversations:%d' % self.id)
         self.redis.delete('conversations:%d:messages' % self.id)
-        self.redis.zrem('operators:%d:conversations' % self.operator.id, self.id)
+        self.redis.lrem('operators:%d:conversations' % self.operator.id, self.id)
 
     @conversation_check
     def send_message(self, text):
@@ -121,12 +110,9 @@ class Conversation:
     def messages(self):
         """ return messages OrderedDict """
         messages = OrderedDict()
-        for m in redis_iter(self.redis, 'conversations:%d:messages' % self.id, ZSET):
-            messages[datetime.fromtimestamp(int(m[1]))] = Message(int(m[0]))
+        for message, time_ in self.redis.zrange('conversations:%d:messages' % self.id, withscores=True):
+            messages[datetime.fromtimestamp(int(time_))] = Message(int(message))
         return messages
-
-    def __eq__(self, other):
-        return self.id == other.id
 
 
 class OperatorDialogAction(BaseAction):
@@ -168,10 +154,8 @@ class OperatorDialogAction(BaseAction):
                 return self.fail_message,
 
 
-class Operator:
-    def __init__(self, id_, redis_=None):
-        self.id = id_
-        self.redis = redis_ if redis_ is not None else get_redis_connection()
+class Operator(StoredObject):
+    MNEMONIC = 'operator'
 
     def new_conversation(self):
         """ return new Conversation object for operator """
@@ -180,55 +164,48 @@ class Operator:
 
     def regenerate_token(self):
         """ Regenerate operator token """
-        self.redis.hset('operators:%d' % self.id, 'token', random_token())
+        self.token = random_token()
 
     @property
     def token(self):
         """ return current token """
-        return self.redis.hget('operators:%d' % self.id, 'token').decode()
+        return self.redis.get('operators:%d:token' % self.id).decode()
+
+    @token.setter
+    def token(self, token):
+        self.redis.set('operators:%d:token' % self.id, token)
 
     @property
     def name(self):
-        return self.redis.hget('operators:%d' % self.id, 'name').decode()
+        return self.redis.get('operators:%d:name' % self.id).decode()
 
     @name.setter
     def name(self, name):
-        self.redis.hset('operators:%d' % self.id, 'name', name)
+        self.redis.set('operators:%d:name' % self.id, name)
 
     @property
     def conversations(self):
-        conversations = OrderedDict()
-        for c in redis_iter(self.redis, 'operators:%d:conversations' % self.id, ZSET):
-            conversations[datetime.fromtimestamp(int(c[1]))] = Conversation(int(c[0]))
-        return conversations
+        conversations = self.redis.lrange('operator:%d:conversations' % self.id, 0, -1)
+        return tuple(Conversation(int(c)) for c in conversations)
 
-    @classmethod
-    def create(cls, name):
-        redis_ = get_redis_connection()
-        last_id = redis_.get('last_operator_id')
-        last_id = int(last_id) if last_id is not None else 0
-        redis_.hmset('operators:%d' % last_id, {'name': name,
-                                                'token': random_token()})
-        redis_.zadd('operators_list', last_id, time.time())
-        redis_.incr('last_operator_id')
-        return cls(last_id, redis_)
+    def init(self, name):
+        self.name = name
+        self.token = random_token()
+        self.redis.rpush('operators_list', self.id)
 
-    @classmethod
-    def delete(cls, operator):
-        redis_ = get_redis_connection()
-        for time, conversation in operator.conversations:
-            Conversation.delete(conversation)
-        redis_.delete('operators:%d' % operator.id)
-        redis_.delete('operators:%d:conversations' % operator.id)
-        redis_.zrem('operators_list', operator.id)
+    def clean_up(self):
+        for conversation in self.conversations:
+            conversation.delete()
+        self.redis.delete('operators:%d:conversations' % self.id)
+        self.redis.delete('operators:%d:name' % self.id)
+        self.redis.delete('operators:%d:token' % self.id)
+        self.redis.lrem('operators_list', self.id)
 
     @classmethod
     def list(cls):
         redis_ = get_redis_connection()
-        operators = OrderedDict()
-        for o in redis_iter(redis_, 'operators_list', ZSET):
-            operators[datetime.fromtimestamp(int(o[1]))] = cls(int(o[0]))
-        return operators
+        operators = redis_.lrange('operators_list', 0, -1)
+        return tuple(cls(int(o)) for o in operators)
 
 
 class OperatorsDispatcher:
