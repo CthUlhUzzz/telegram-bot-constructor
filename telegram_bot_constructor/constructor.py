@@ -1,4 +1,4 @@
-from .helpers import StoredObject
+from .helpers import StoredObject, get_redis_connection
 from telegram_bot_vm.actions import *
 from .runner import BotStatisticsAction
 from .operators_server import OperatorDialogAction
@@ -15,7 +15,7 @@ class BaseComponent(StoredObject):
     def type(self, type_):
         self.redis.set('components:%d:type' % self.id, type_)
 
-    def init(self):
+    def init(self, *args, **kwargs):
         self.type = type(self).__name__
 
     def clean_up(self):
@@ -24,6 +24,10 @@ class BaseComponent(StoredObject):
 
 class SendMessage(BaseComponent):
     """ Send message to client """
+
+    def init(self, text):
+        super().init()
+        self.text = text
 
     @property
     def text(self):
@@ -40,6 +44,10 @@ class SendMessage(BaseComponent):
 
 class GetInput(BaseComponent):
     """ Wait input from user and store it into variable """
+
+    def init(self, variable_name):
+        super().init()
+        self.variable_name = variable_name
 
     @property
     def variable_name(self):
@@ -59,6 +67,12 @@ class ForwardToScreen(BaseComponent):
     If no condition_regex - unconditional forward
     else if variable match condition_regex - conditional forward
     else - ignore """
+
+    def init(self, variable_name, target_screen, condition_regex):
+        super().init()
+        self.variable_name = variable_name
+        self.target_screen = target_screen
+        self.condition_regex = condition_regex
 
     @property
     def variable_name(self):
@@ -93,6 +107,12 @@ class ForwardToScreen(BaseComponent):
 
 class OperatorDialog(BaseComponent):
     """ Connect free operator to dialog with user """
+
+    def init(self, start_message, stop_message, fail_message):
+        super().init()
+        self.start_message = start_message
+        self.stop_message = stop_message
+        self.fail_message = fail_message
 
     @property
     def start_message(self):
@@ -228,16 +248,23 @@ class BotTemplate(StoredObject):
 
     def compile(self):
         """ return actions for execution in Virtual Machine """
+        actions = list()
+        actions.append(BotStatisticsAction())
+        # for act in self.start_screen.actions:
+        #     if isinstance(act,SendMessageAction):
+        #
 
-    def create(self, name, start_screen):
+    def init(self, name, start_screen):
         """ add bot template to db and return """
-        self.redis.set('bot_templates:%d:name' % self.id, name)
+        self.name = name
         self.start_screen = start_screen
+        self.redis.rpush('bot_templates_list', self.id)
 
     def clean_up(self):
         for screen in self.screens:
             screen.delete()
-        self.redis.lrem('bot_templates:%d:screens' % self.id)
+        self.redis.lrem('bot_templates_list', self.id)
+        self.redis.delete('bot_templates:%d:screens' % self.id)
         self.redis.delete('bot_templates:%d:name' % self.id)
         self.redis.delete('bot_templates:%d:start_screen' % self.id)
 
@@ -248,3 +275,9 @@ class BotTemplate(StoredObject):
     @name.setter
     def name(self, name):
         self.redis.set('bot_templates:%d:name' % self.id, name)
+
+    @classmethod
+    def list(cls):
+        redis_ = get_redis_connection()
+        bot_templates_list = redis_.lrange('bot_templates_list', 0, -1)
+        return tuple(cls(int(t)) for t in bot_templates_list)
