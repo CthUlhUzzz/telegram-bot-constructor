@@ -5,7 +5,7 @@ from telegram_bot_vm.actions import BaseAction
 from telegram_bot_vm.machine import BotVM
 
 from . import get_redis_connection
-from .constructor import BotTemplate
+from . import constructor
 from .operators_server import Operator
 from .operators_server import OperatorsDispatcher
 from .helpers import StoredObject
@@ -56,7 +56,7 @@ class BotRunnerContext(StoredObject):
     def bot_template(self):
         bot_template_id = self.redis.get('bot_contexts:%d:bot_template' % self.id)
         if bot_template_id is not None:
-            return BotTemplate(int(bot_template_id))
+            return constructor.BotTemplate(int(bot_template_id))
 
     @bot_template.setter
     def bot_template(self, bot_template):
