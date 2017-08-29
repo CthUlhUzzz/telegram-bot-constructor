@@ -233,7 +233,7 @@ class BotTemplate(StoredObject):
     def start_screen(self):
         """ return start screen if set, else None """
         screen_id = self.redis.get('bot_templates:%d:start_screen' % self.id)
-        return Screen(screen_id)
+        return Screen(int(screen_id))
 
     @start_screen.setter
     def start_screen(self, screen):
