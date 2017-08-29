@@ -191,30 +191,30 @@ class Screen(StoredObject):
         """ change index for component in screen """
         component_index = self.redis.zrank('screens:%d:components' % self.id, component.id)
         components_count = self.redis.zcard('screens:%d:components' % self.id)
-        assert component_index != target_index
-        assert 0 >= target_index < components_count
-        if component.index is not None:
+        assert 0 <= target_index < components_count
+        if component_index is not None:
             if component_index < target_index:
                 center_components = self.redis.zrange('screens:%d:components' % self.id,
-                                                      int(component_index) + 1, target_index)
+                                                      component_index + 1, target_index)
                 for c in center_components:
                     self.redis.zincrby('screens:%d:components' % self.id, int(c), -1)
-                self.redis.zincrby('screens:%d:components' % self.id, component.id, + (target_index - component_index))
+                self.redis.zincrby('screens:%d:components' % self.id, component.id, target_index - component_index)
             elif component_index > target_index:
                 center_components = self.redis.zrange('screens:%d:components' % self.id,
-                                                      int(component_index) - 1, target_index)
+                                                      target_index, component_index - 1)
                 for c in center_components:
                     self.redis.zincrby('screens:%d:components' % self.id, int(c), +1)
-                self.redis.zincrby('screens:%d:components' % self.id, component.id, - (component_index - target_index))
+                self.redis.zincrby('screens:%d:components' % self.id, component.id, target_index - component_index)
 
     def delete_component(self, component):
         """ Delete component from screen """
         component_index = self.redis.zrank('screens:%d:components' % self.id, component.id)
         if component_index is not None:
-            tail_components = self.redis.zrange('screens:%d:components' % self.id, int(component_index), -1)
+            self.redis.zrem('screens:%d:components' % self.id, component_index)
+            tail_components = self.redis.zrange('screens:%d:components' % self.id, component_index, -1)
             for c in tail_components:
                 self.redis.zincrby('screens:%d:components' % self.id, int(c), -1)
-        component.delete()
+            component.delete()
 
 
 class BotTemplate(StoredObject):
