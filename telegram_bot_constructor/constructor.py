@@ -183,7 +183,7 @@ class Screen(StoredObject):
         components = self.redis.zrange('screens:%d:components' % self.id, 0, -1)
         for c in components:
             id_ = int(c)
-            type_ = self.redis.get('components:%d:type' % self.id).decode()
+            type_ = self.redis.get('components:%d:type' % id_).decode()
             result.append(_COMPONENTS_TYPES_MAP[type_](id_))
         return tuple(result)
 
@@ -227,38 +227,25 @@ class BotTemplate(StoredObject):
 
     def add_screen(self, screen):
         """ Add new screen to bot template """
-        self.redis.rpush('bot_templates:%d:screens' % self.id, screen.id, screen.id)
-
-    @property
-    def start_screen(self):
-        """ return start screen if set, else None """
-        screen_id = self.redis.get('bot_templates:%d:start_screen' % self.id)
-        return Screen(int(screen_id))
-
-    @start_screen.setter
-    def start_screen(self, screen):
-        if screen is not None:
-            self.redis.set('bot_templates:%d:start_screen' % self.id, screen.id)
+        self.redis.rpush('bot_templates:%d:screens' % self.id, screen.id)
 
     @property
     def screens(self):
         """ return screens iterator """
-        screens = self.redis.lrange('bot_templates:%d:screens', 0, -1)
+        screens = self.redis.lrange('bot_templates:%d:screens' % self.id, 0, -1)
         return tuple(Screen(int(screen)) for screen in screens)
 
     def compile(self):
         """ return actions for execution in Virtual Machine """
         actions = list()
         actions.append(BotStatisticsAction())
-        # for act in self.start_screen.actions:
-        #     if isinstance(act,SendMessageAction):
-        #
 
-    def init(self, name, start_screen):
+    def init(self, name):
         """ add bot template to db and return """
         self.name = name
-        self.start_screen = start_screen
         self.redis.rpush('bot_templates_list', self.id)
+        self.add_screen(Screen.create('Start screen'))
+        pass
 
     def clean_up(self):
         for screen in self.screens:
@@ -266,7 +253,6 @@ class BotTemplate(StoredObject):
         self.redis.lrem('bot_templates_list', self.id)
         self.redis.delete('bot_templates:%d:screens' % self.id)
         self.redis.delete('bot_templates:%d:name' % self.id)
-        self.redis.delete('bot_templates:%d:start_screen' % self.id)
 
     @property
     def name(self):
