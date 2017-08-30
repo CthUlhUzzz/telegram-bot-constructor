@@ -4,6 +4,10 @@ import string
 from . import get_redis_connection
 
 
+class ObjectDoesNotExist(Exception):
+    pass
+
+
 class StoredObject:
     """ Abstract class for stored in redis database objects """
 
@@ -11,7 +15,8 @@ class StoredObject:
 
     def __init__(self, id_, redis_=None):
         self.redis = redis_ if redis_ is not None else get_redis_connection()
-        assert type(self).exists(id_, self.redis)
+        if not type(self).exists(id_, self.redis):
+            raise ObjectDoesNotExist
         self.id = id_
 
     @classmethod
