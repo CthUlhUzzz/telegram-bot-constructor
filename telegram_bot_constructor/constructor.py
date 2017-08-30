@@ -151,6 +151,12 @@ _COMPONENTS_TYPES_MAP = {'SendMessage': SendMessage,
                          'OperatorDialog': OperatorDialog}
 
 
+def get_component_by_id(id_):
+    redis_ = get_redis_connection()
+    type_ = redis_.get('components:%d:type' % id_).decode()
+    return _COMPONENTS_TYPES_MAP[type_](id_)
+
+
 class Screen(StoredObject):
     MNEMONIC = 'screen'
 
@@ -182,9 +188,7 @@ class Screen(StoredObject):
         result = []
         components = self.redis.zrange('screens:%d:components' % self.id, 0, -1)
         for c in components:
-            id_ = int(c)
-            type_ = self.redis.get('components:%d:type' % id_).decode()
-            result.append(_COMPONENTS_TYPES_MAP[type_](id_))
+            result.append(get_component_by_id(int(c)))
         return tuple(result)
 
     def change_component_position(self, component, target_index):
