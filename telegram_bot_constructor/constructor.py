@@ -157,6 +157,7 @@ def get_component_by_id(id_):
     return _COMPONENTS_TYPES_MAP[type_](id_)
 
 
+
 class Screen(StoredObject):
     MNEMONIC = 'screen'
 
@@ -219,6 +220,7 @@ class Screen(StoredObject):
             for c in tail_components:
                 self.redis.zincrby('screens:%d:components' % self.id, int(c), -1)
             component.delete()
+
 
 
 class BotTemplate(StoredObject):
