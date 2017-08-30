@@ -157,7 +157,6 @@ def get_component_by_id(id_):
     return _COMPONENTS_TYPES_MAP[type_](id_)
 
 
-
 class Screen(StoredObject):
     MNEMONIC = 'screen'
 
