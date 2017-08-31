@@ -221,7 +221,6 @@ class Screen(StoredObject):
             component.delete()
 
 
-
 class BotTemplate(StoredObject):
     MNEMONIC = 'bot_template'
 
@@ -242,15 +241,42 @@ class BotTemplate(StoredObject):
 
     def compile(self):
         """ return actions for execution in Virtual Machine """
-        actions = list()
+
+        def calculate_forward_position(screens, screen=None):
+            position = 0
+            if screen is not None:
+                screen_index = screens.index(screen)
+                screens = self.screens[:screen_index]
+            for s in screens:
+                position += len(s.components) + 1
+            position += 1
+            return position
+
+        actions = []
+        screens = self.screens
         actions.append(BotStatisticsAction())
+        for screen in screens:
+            for action in screen.components:
+                if isinstance(action, SendMessage):
+                    actions.append(SendMessageAction(action.text))
+                elif isinstance(action, GetInput):
+                    actions.append(GetInputAction(action.variable_name))
+                elif isinstance(action, ForwardToScreen):
+                    actions.append(ForwardToPositionAction(calculate_forward_position(screens, screen),
+                                                           action.variable_name,
+                                                           action.condition_regex))
+                elif isinstance(action, OperatorDialog):
+                    actions.append(OperatorDialogAction(action.start_message,
+                                                        action.stop_message,
+                                                        action.fail_message))
+            actions.append(ForwardToPositionAction(calculate_forward_position(screens)))
+        return actions
 
     def init(self, name):
         """ add bot template to db and return """
         self.name = name
         self.redis.rpush('bot_templates_list', self.id)
         self.add_screen(Screen.create('Start screen'))
-        pass
 
     def clean_up(self):
         for screen in self.screens:
