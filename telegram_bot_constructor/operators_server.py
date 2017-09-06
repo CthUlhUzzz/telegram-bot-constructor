@@ -110,8 +110,8 @@ class Conversation(StoredObject):
     def messages(self):
         """ return messages OrderedDict """
         messages = OrderedDict()
-        for message, time_ in self.redis.zrange('conversations:%d:messages' % self.id, withscores=True):
-            messages[datetime.fromtimestamp(int(time_))] = Message(int(message))
+        for message, time_ in self.redis.zrange('conversations:%d:messages' % self.id, 0,-1,withscores=True):
+            messages[datetime.fromtimestamp(float(time_))] = Message(int(message))
         return messages
 
 
@@ -160,6 +160,7 @@ class Operator(StoredObject):
     def new_conversation(self):
         """ return new Conversation object for operator """
         conversation = Conversation.create(self)
+        self.redis.rpush('operator:%d:conversations' % self.id, conversation.id)
         return conversation
 
     def regenerate_token(self):

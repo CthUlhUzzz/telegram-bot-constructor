@@ -16,10 +16,8 @@ running_bots = {}
 class BotRunnerContext(StoredObject):
     MNEMONIC = 'bot_context'
 
-    def init(self, name, bot_template, token):
+    def init(self, name):
         self.name = name
-        self.bot_template = bot_template
-        self.token = token
         self.redis.rpush('bot_contexts_list', self.id)
 
     def clean_up(self):
