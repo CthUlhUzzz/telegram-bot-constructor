@@ -36,7 +36,7 @@ class BotRunnerContext(StoredObject):
 
     @property
     def name(self):
-        n = self.redis.get('bot_contexts:%d:name' % self.id).decode()
+        n = self.redis.get('bot_contexts:%d:name' % self.id)
         if n is not None:
             return n.decode()
 
