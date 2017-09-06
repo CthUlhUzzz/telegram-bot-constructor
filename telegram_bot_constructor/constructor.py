@@ -1,6 +1,6 @@
 from .helpers import StoredObject, get_redis_connection
 from telegram_bot_vm.actions import *
-from .runner import BotStatisticsAction
+from . import runner
 from .operators_server import OperatorDialogAction
 
 
@@ -254,7 +254,7 @@ class BotTemplate(StoredObject):
 
         actions = []
         screens = self.screens
-        actions.append(BotStatisticsAction())
+        actions.append(runner.BotStatisticsAction())
         for screen in screens:
             for action in screen.components:
                 if isinstance(action, SendMessage):
