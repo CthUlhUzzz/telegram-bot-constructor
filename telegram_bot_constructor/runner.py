@@ -40,11 +40,15 @@ class BotRunnerContext(StoredObject):
 
     @name.setter
     def name(self, name):
-        self.redis.set('bot_contexts:%d:name' % self.id, name)
+        n = self.redis.set('bot_contexts:%d:name' % self.id, name)
+        if n is not None:
+            return n.decode()
 
     @property
     def token(self):
-        return self.redis.get('bot_contexts:%d:token' % self.id).decode()
+        t = self.redis.get('bot_contexts:%d:token' % self.id)
+        if t is not None:
+            return t.decode()
 
     @token.setter
     def token(self, token):
