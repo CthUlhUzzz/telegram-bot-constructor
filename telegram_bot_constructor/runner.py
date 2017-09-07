@@ -1,7 +1,3 @@
-import time
-from datetime import date
-
-from telegram_bot_vm.actions import BaseAction
 from telegram_bot_vm.machine import BotVM
 
 from . import get_redis_connection
@@ -68,7 +64,10 @@ class BotRunnerContext(StoredObject):
             self.redis.set('bot_contexts:%d:bot_template' % self.id, bot_template.id)
 
     def add_operator(self, operator):
-        self.redis.rpush('bot_contexts:%d:operators' % self.id, operator.id)
+        if operator not in self.operators:
+            self.redis.rpush('bot_contexts:%d:operators' % self.id, operator.id)
+        else:
+            raise OperatorAlreadyAdded
 
     def delete_operator(self, operator):
         self.redis.lrem('bot_contexts:%d:operators' % self.id, operator.id)
@@ -102,8 +101,20 @@ class BotRunnerContext(StoredObject):
             del running_bots[self.id]
 
 
-class BotStatisticsAction(BaseAction):
-    def exec(self, vm_context):
-        redis = get_redis_connection()
-        redis.hincr('bot_contexts:%d:visits' % vm_context.bot_context_id, date.fromtimestamp(time.time()).isoformat())
-        vm_context += 1
+class OperatorAlreadyAdded(Exception):
+    pass
+
+
+def is_operator_locked(operator):
+    for context in BotRunnerContext.list():
+        for oper in context.operators:
+            if oper == operator:
+                return True
+    return False
+
+
+def is_bot_template_locked(bot_template):
+    for context in BotRunnerContext.list():
+        if context.bot_template == bot_template:
+            return True
+    return False
