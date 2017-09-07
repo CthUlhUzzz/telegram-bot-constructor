@@ -80,7 +80,6 @@ class Conversation(StoredObject):
     def clean_up(self):
         for message in self.messages.values():
             message.delete()
-        self.redis.lrem('operators:%d:conversations' % self.operator.id, self.id)
         self.redis.delete('conversations:%d:messages' % self.id)
 
     @conversation_check
