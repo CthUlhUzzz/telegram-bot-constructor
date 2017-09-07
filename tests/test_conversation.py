@@ -26,6 +26,7 @@ for _ in range(random.randint(0, 10)):
         elif direction == 1:
             c.send_message(str(uuid.uuid4()))
 print(Operator.list())
+o.delete()
 # print(c.messages)
 # print(c.started_at)
 # c.start()

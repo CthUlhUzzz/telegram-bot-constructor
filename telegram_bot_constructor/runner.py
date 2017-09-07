@@ -62,7 +62,10 @@ class BotRunnerContext(StoredObject):
 
     @bot_template.setter
     def bot_template(self, bot_template):
-        self.redis.set('bot_contexts:%d:bot_template' % self.id, bot_template.id)
+        if bot_template is None:
+            self.redis.delete('bot_contexts:%d:bot_template' % self.id)
+        else:
+            self.redis.set('bot_contexts:%d:bot_template' % self.id, bot_template.id)
 
     def add_operator(self, operator):
         self.redis.rpush('bot_contexts:%d:operators' % self.id, operator.id)
