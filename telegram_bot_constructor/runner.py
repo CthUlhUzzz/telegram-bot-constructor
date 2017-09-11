@@ -9,6 +9,10 @@ from .helpers import StoredObject
 running_bots = {}
 
 
+class BotTemplateNotSelected(Exception):
+    pass
+
+
 class BotRunnerContext(StoredObject):
     MNEMONIC = 'bot_context'
 
@@ -88,11 +92,14 @@ class BotRunnerContext(StoredObject):
         return 0 if visits is None else int(visits)
 
     def run(self):
-        actions = self.bot_template.compile()
-        process = BotVM.run(actions, self.token,
-                            add_properties={'operators_dispatcher': OperatorsDispatcher(self.operators),
-                                            'bot_context_id': self.id})
-        running_bots[self.id] = process
+        if self.bot_template is not None:
+            actions = self.bot_template.compile()
+            process = BotVM.run(actions, self.token,
+                                add_properties={'operators_dispatcher': OperatorsDispatcher(self.operators),
+                                                'bot_context_id': self.id})
+            running_bots[self.id] = process
+        else:
+            raise BotTemplateNotSelected
 
     def stop(self):
         process = running_bots.get(self.id)

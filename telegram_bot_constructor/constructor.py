@@ -1,13 +1,17 @@
 from .helpers import StoredObject, get_redis_connection
 from telegram_bot_vm.actions import *
 from .operators_server import OperatorDialogAction
+import time
+from datetime import date
 
 
 class BotStatisticsAction(BaseAction):
     def exec(self, vm_context):
         redis = get_redis_connection()
-        redis.hincr('bot_contexts:%d:visits' % vm_context.bot_context_id, date.fromtimestamp(time.time()).isoformat())
-        vm_context += 1
+        redis.hincrby('bot_contexts:%d:visits' % vm_context.bot_context_id,
+                      date.fromtimestamp(time.time()).isoformat(), 1)
+        vm_context.position += 1
+
 
 class BaseComponent(StoredObject):
     MNEMONIC = 'component'
