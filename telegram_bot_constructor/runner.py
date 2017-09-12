@@ -5,6 +5,7 @@ from . import constructor
 from .operators_server import Operator
 from .operators_server import OperatorsDispatcher
 from .helpers import StoredObject
+from telegram import Bot
 
 running_bots = {}
 
@@ -52,6 +53,7 @@ class BotRunnerContext(StoredObject):
 
     @token.setter
     def token(self, token):
+        Bot._validate_token(token)
         self.redis.set('bot_contexts:%d:token' % self.id, token)
 
     @property
