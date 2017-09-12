@@ -223,7 +223,7 @@ class Screen(StoredObject):
         """ Delete component from screen """
         component_index = self.redis.zrank('screens:%d:components' % self.id, component.id)
         if component_index is not None:
-            self.redis.zrem('screens:%d:components' % self.id, component_index)
+            self.redis.zrem('screens:%d:components' % self.id, component.id)
             tail_components = self.redis.zrange('screens:%d:components' % self.id, component_index, -1)
             for c in tail_components:
                 self.redis.zincrby('screens:%d:components' % self.id, int(c), -1)
