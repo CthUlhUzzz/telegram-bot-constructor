@@ -233,6 +233,10 @@ class Screen(StoredObject):
 class BotTemplate(StoredObject):
     MNEMONIC = 'bot_template'
 
+    @property
+    def start_screen(self):
+        return self.screens[0]
+
     def delete_screen(self, screen):
         """ Delete screen from bot template """
         self.redis.lrem('bot_templates:%d:screens' % self.id, screen.id)
