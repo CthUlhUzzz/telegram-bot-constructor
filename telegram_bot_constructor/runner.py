@@ -1,11 +1,13 @@
-from telegram_bot_vm.machine import BotVM
-
 from . import get_redis_connection
 from . import constructor
 from .operators_server import Operator
 from .operators_server import OperatorsDispatcher
 from .helpers import StoredObject
 from telegram import Bot
+from telegram_bot_vm.state import BotState
+from telegram_bot_vm.bot import Bot
+from datetime import date
+import time
 
 running_bots = {}
 
@@ -14,10 +16,11 @@ class BotTemplateNotSelected(Exception):
     pass
 
 
-class BotRunnerContext(StoredObject):
+class BotRunnerContext(StoredObject, BotState):
     MNEMONIC = 'bot_context'
 
     def init(self, name):
+        self.bot = None
         self.name = name
         self.redis.rpush('bot_contexts_list', self.id)
 
@@ -29,11 +32,25 @@ class BotRunnerContext(StoredObject):
         self.redis.delete('bot_contexts:%d:token' % self.id)
         self.redis.delete('bot_contexts:%d:operators' % self.id)
         self.redis.delete('bot_contexts:%d:visits' % self.id)
+        self.redis.delete('bot_contexts:%d:chats' % self.id)
         self.redis.lrem('bot_contexts_list', self.id)
 
     @property
     def running(self):
-        return True if self.id in running_bots else False
+        return self.bot is not None
+
+    @property
+    def bot(self):
+        if self.id in running_bots:
+            return running_bots[self.id]
+
+    @bot.setter
+    def bot(self, bot):
+        if bot is None:
+            if self.id in running_bots:
+                del running_bots[self.id]
+        else:
+            running_bots[self.id] = bot
 
     @property
     def name(self):
@@ -94,20 +111,36 @@ class BotRunnerContext(StoredObject):
         return 0 if visits is None else int(visits)
 
     def run(self):
-        if self.bot_template is not None:
-            actions = self.bot_template.compile()
-            process = BotVM.run(actions, self.token,
-                                add_properties={'operators_dispatcher': OperatorsDispatcher(self.operators),
-                                                'bot_context_id': self.id})
-            running_bots[self.id] = process
-        else:
-            raise BotTemplateNotSelected
+        if not self.running:
+            if self.bot_template is not None:
+                actions = self.bot_template.compile()
+                self.bot = Bot(actions, self,
+                               additioanal_properties={'operators_dispatcher': OperatorsDispatcher(self.operators),
+                                                       'bot_context_id': self.id})
+                self.bot.run(self.token)
+            else:
+                raise BotTemplateNotSelected
 
     def stop(self):
-        process = running_bots.get(self.id)
-        if process is not None:
-            process.terminate()
-            del running_bots[self.id]
+        if self.running:
+            self.bot.stop()
+            self.bot = None
+
+    def add_chat(self, chat):
+        self.redis.rpush('bot_contexts:%d:chats' % self.id, chat)
+
+    def chats(self):
+        chats = self.redis.lrange('bot_contexts:%d:chats' % self.id, 0, -1)
+        return tuple(int(c) for c in chats)
+
+    def mail_all(self, message):
+        """ Send message to all chats """
+        if self.running:
+            self.bot.mail_all(message)
+
+    def increment_visits(self):
+        self.redis.hincrby('bot_contexts:%d:visits' % self.id,
+                           date.fromtimestamp(time.time()).isoformat(), 1)
 
 
 class OperatorAlreadyAdded(Exception):

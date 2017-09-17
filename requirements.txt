@@ -1,2 +1,2 @@
-telegram-bot-vm
+git+https://github.com/CthUlhUzzz/telegram-bot-vm
 redis

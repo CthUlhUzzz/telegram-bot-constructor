@@ -1,16 +1,6 @@
 from .helpers import StoredObject, get_redis_connection
 from telegram_bot_vm.actions import *
 from .operators_server import OperatorDialogAction
-import time
-from datetime import date
-
-
-class BotStatisticsAction(BaseAction):
-    def exec(self, vm_context):
-        redis = get_redis_connection()
-        redis.hincrby('bot_contexts:%d:visits' % vm_context.bot_context_id,
-                      date.fromtimestamp(time.time()).isoformat(), 1)
-        vm_context.position += 1
 
 
 class BaseComponent(StoredObject):
@@ -262,12 +252,10 @@ class BotTemplate(StoredObject):
                 screens = self.screens[:screen_index]
             for s in screens:
                 position += len(s.components) + 1
-            position += 1
             return position
 
         actions = []
         screens = self.screens
-        actions.append(BotStatisticsAction())
         for screen in screens:
             for action in screen.components:
                 if isinstance(action, SendMessage):
