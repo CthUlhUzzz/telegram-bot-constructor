@@ -3,7 +3,7 @@ from . import constructor
 from .operators_server import Operator
 from .operators_server import OperatorsDispatcher
 from .helpers import StoredObject
-from telegram import Bot
+from telegram import Bot as TelegramBot
 from telegram_bot_vm.state import BotState
 from telegram_bot_vm.bot import Bot
 from datetime import date
@@ -70,7 +70,7 @@ class BotRunnerContext(StoredObject, BotState):
 
     @token.setter
     def token(self, token):
-        Bot._validate_token(token)
+        TelegramBot._validate_token(token)
         self.redis.set('bot_contexts:%d:token' % self.id, token)
 
     @property
