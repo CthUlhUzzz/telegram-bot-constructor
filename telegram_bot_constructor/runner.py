@@ -129,6 +129,7 @@ class BotRunnerContext(StoredObject, BotState):
     def add_chat(self, chat):
         self.redis.rpush('bot_contexts:%d:chats' % self.id, chat)
 
+    @property
     def chats(self):
         chats = self.redis.lrange('bot_contexts:%d:chats' % self.id, 0, -1)
         return tuple(int(c) for c in chats)
